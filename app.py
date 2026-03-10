@@ -1,13 +1,14 @@
 import os
 import numpy as np
 import onnxruntime as ort
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, redirect, url_for, session
 from PIL import Image
 import io
 
 app = Flask(__name__)
+app.secret_key = "secret_key"
 
-# CIFAR-100 Classes (Standard Order)
+# CIFAR-100 Classes
 CIFAR100_CLASSES = [
     'apple', 'aquarium_fish', 'baby', 'bear', 'beaver', 'bed', 'bee', 'beetle', 'bicycle', 'bottle',
     'bowl', 'boy', 'bridge', 'bus', 'butterfly', 'camel', 'can', 'castle', 'caterpillar', 'cattle',
@@ -23,58 +24,64 @@ CIFAR100_CLASSES = [
 
 # Load the ONNX model
 MODEL_PATH = "model.onnx"
-session = None
+ort_session = None
 if os.path.exists(MODEL_PATH):
-    session = ort.InferenceSession(MODEL_PATH)
+    ort_session = ort.InferenceSession(MODEL_PATH)
 
 def preprocess_image(image_bytes):
     img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
     img = img.resize((32, 32))
-    
-    # Use explicit float32 to avoid ONNX errors
-    mean = np.array([0.5071, 0.4867, 0.4408])
-    std = np.array([0.2675, 0.2565, 0.2761])
-    
+    mean = np.array([0.5071, 0.4867, 0.4408], dtype=np.float32)
+    std = np.array([0.2675, 0.2565, 0.2761], dtype=np.float32)
     img_data = np.array(img).astype(np.float32) / 255.0
     img_data = (img_data - mean) / std
     img_data = img_data.transpose(2, 0, 1)
     img_data = np.expand_dims(img_data, axis=0).astype(np.float32)
-    
     return img_data
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def home():
-    return render_template('index.html')
+    if request.method == 'POST':
+        if ort_session is None:
+            session['error'] = "Model not found."
+            return redirect(url_for('home'))
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    if session is None:
-        return render_template('index.html', error="Model not found. Run train.py first.")
-
-    if 'file' not in request.files:
-        return render_template('index.html', error="No file uploaded.")
-    
-    file = request.files['file']
-    if file.filename == '':
-        return render_template('index.html', error="No file selected.")
-
-    try:
-        img_bytes = file.read()
-        input_data = preprocess_image(img_bytes)
+        if 'file' not in request.files:
+            session['error'] = "No file uploaded."
+            return redirect(url_for('home'))
         
-        inputs = {session.get_inputs()[0].name: input_data}
-        outputs = session.run(None, inputs)
-        
-        prediction_idx = int(np.argmax(outputs[0]))
-        class_name = CIFAR100_CLASSES[prediction_idx].replace('_', ' ')
-        confidence = float(np.max(outputs[0]))
+        file = request.files['file']
+        if file.filename == '':
+            session['error'] = "No file selected."
+            return redirect(url_for('home'))
 
-        return render_template('index.html', 
-                               prediction=class_name, 
-                               confidence=round(confidence, 2))
+        try:
+            img_bytes = file.read()
+            input_data = preprocess_image(img_bytes)
+            inputs = {ort_session.get_inputs()[0].name: input_data}
+            outputs = ort_session.run(None, inputs)
+            prediction_idx = int(np.argmax(outputs[0]))
+            
+            # Store results in session
+            session['prediction'] = CIFAR100_CLASSES[prediction_idx].replace('_', ' ')
+            session['confidence'] = round(float(np.max(outputs[0])), 2)
+            
+            # REDIRECT to GET request (PRG Pattern)
+            return redirect(url_for('home'))
+        except Exception as e:
+            session['error'] = str(e)
+            return redirect(url_for('home'))
 
-    except Exception as e:
-        return render_template('index.html', error=str(e))
+    # GET Request Logic
+    # Pull data from session and then clear it
+    prediction = session.pop('prediction', None)
+    confidence = session.pop('confidence', None)
+    error = session.pop('error', None)
+
+    return render_template('index.html', 
+                           prediction=prediction, 
+                           confidence=confidence, 
+                           error=error)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
