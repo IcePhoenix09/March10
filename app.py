@@ -70,7 +70,10 @@ def predict():
         # Preprocess
         img_bytes = file.read()
         input_data = preprocess_image(img_bytes)
-        
+
+        # It expecting (tensor(float))
+        input_data = input_data.astype(np.float32)
+
         # Run Inference
         inputs = {session.get_inputs()[0].name: input_data}
         outputs = session.run(None, inputs)
