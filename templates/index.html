@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CIFAR-100 Upload</title>
+</head>
+<body>
+    <h1>CIFAR-100 Classifier</h1>
+    <form action="/predict" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/*" required>
+        <button type="submit">Upload and Predict</button>
+    </form>
+</body>
+</html>

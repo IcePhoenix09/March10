@@ -1,0 +1,6 @@
+.vscode/
+
+*.onnx
+*.onnx.data
+*.pth
+\data
