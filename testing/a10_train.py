@@ -46,7 +46,7 @@ def log_confusion_matrix(writer, all_labels, all_predictions, class_names, epoch
     plt.title(f'Confusion Matrix - Epoch {epoch}')
     plt.ylabel('Actual')
     plt.xlabel('Predicted')
-    
+
     # Send the plot to TensorBoard
     writer.add_figure("Confusion Matrix", fig, global_step=epoch)
     plt.close(fig) # Close to save memory
@@ -63,11 +63,11 @@ def show_sample_images(images, true_labels, predicted, num_images, class_names):
         img = np.clip(img, 0, 1)
 
         plt.imshow(img)
-        
+
         color = "green" if predicted[i] == true_labels[i] else "red"
         ax.set_title(f"P: {class_names[predicted[i]]}\nA: {class_names[true_labels[i]]}", 
                      color=color, fontsize=10)
-    
+
     plt.show()
     plt.close(fig)
 
@@ -144,7 +144,7 @@ class Net(nn.Module):
         total_samples = len(all_labels)
         accuracy = correct_results / total_samples
         f1 = f1_score(all_labels, all_predictions, average='weighted')
-        
+
         print(f"Correct results: {correct_results}")
         print(f"Total samples: {total_samples}")
         print(f"Accuracy: {accuracy:.4f}")
@@ -159,11 +159,11 @@ class Net(nn.Module):
 
         # 1. Generate the confusion matrix data
         cm = confusion_matrix(self.all_labels, self.all_predictions)
-        
+
         # 2. Set up the visual style
         plt.figure(figsize=(10, 8))
         sns.set_theme(style="white")
-        
+
         # 3. Create the heatmap
         sns.heatmap(
             cm, 
@@ -173,7 +173,7 @@ class Net(nn.Module):
             xticklabels=class_names if class_names else 'auto',
             yticklabels=class_names if class_names else 'auto'
         )
-        
+
         # 4. Add labels and title
         plt.title('Confusion Matrix', fontsize=16)
         plt.ylabel('Actual Label', fontsize=12)
