@@ -38,45 +38,6 @@ translate = {
     'ragno': 'spider'
 }
 
-# def log_sample_images(model, test_dataloader, num_images, writer, epoch=None):
-#     images = []
-#     true_label = []
-#     predicted = []
-#     for x, y in test_dataloader:
-#         true_label.extend(y.numpy())
-#         images.extend(x.numpy())
-
-#         x = x.cuda()
-
-
-#         y_test_pred = model(x)
-#         predictions = y_test_pred.argmax(axis=1)
-
-#         predicted.extend(predictions.cpu().numpy())
-
-#         if len(images) >= num_images:
-#            break
-    
-#     fig = plt.figure(figsize=(12, 6))
-
-#     for i in range(num_images):
-#         ax = fig.add_subplot(1, num_images, i + 1, xticks=[], yticks=[])
-
-#         img = images[i]
-
-#         img = np.transpose(img, (1, 2, 0))
-#         img = np.clip(img, 0, 1)
-
-#         plt.imshow(img)
-        
-#         color = "green" if predicted[i] == true_label[i] else "red"
-#         ax.set_title(f"P: {class_names[predicted[i]]}\nA: {class_names[true_label[i]]}", 
-#                      color=color, fontsize=10)
-    
-#     plt.show()
-#     writer.add_figure("Sample Predictions", fig, global_step=epoch)
-#     plt.close(fig)
-
 def log_confusion_matrix(writer, all_labels, all_predictions, class_names, epoch):
     cm = confusion_matrix(all_labels, all_predictions)
     fig = plt.figure(figsize=(10, 8))
