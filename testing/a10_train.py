@@ -181,80 +181,80 @@ class Net(nn.Module):
         plt.show()
 
 
-def train_step(x, y, model, optimizer, criterion):
-    optimizer.zero_grad()
-    y_pred = model(x)
-    loss = criterion(y_pred, y)
-    loss.backward()
-    optimizer.step()
-    return loss.item()
+    def train_step(self, x, y, optimizer, criterion):
+        optimizer.zero_grad()
+        y_pred = self(x)
+        loss = criterion(y_pred, y)
+        loss.backward()
+        optimizer.step()
+        return loss.item()
 
-def train_loop(model, train_dataloader, test_dataloader, optimizer, criterion, all_epochs=3, starting_epoch=0):
+    def train_loop(self, train_dataloader, test_dataloader, optimizer, criterion, all_epochs=3, starting_epoch=0):
 
-    EPOCHS =  all_epochs - starting_epoch
-    if EPOCHS <= 0:
-        print("[Error] Training is already finished")
-        return 
+        EPOCHS =  all_epochs - starting_epoch
+        if EPOCHS <= 0:
+            print("[Error] Training is already finished")
+            return
 
-    print("Batch size is - ", BATCH_SIZE)
-    print("Number of epochs - ", EPOCHS)
+        print("Batch size is - ", BATCH_SIZE)
+        print("Number of epochs - ", EPOCHS)
 
-    for epoch in range(EPOCHS):
-        model.train(True)
+        for epoch in range(EPOCHS):
+            self.train(True)
 
-        running_loss = 0.0
+            running_loss = 0.0
 
-        loader = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{EPOCHS}")
+            loader = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{EPOCHS}")
 
-        for batch_idx, (x, y) in enumerate(loader):
-            x, y = x.cuda(), y.cuda()
-            loss = train_step(x, y, model, optimizer, criterion)
-            running_loss += loss
+            for batch_idx, (x, y) in enumerate(loader):
+                x, y = x.cuda(), y.cuda()
+                loss = self.train_step(x, y, optimizer, criterion)
+                running_loss += loss
 
-            loader.set_postfix({'loss': f"{loss:.4f}"})
+                loader.set_postfix({'loss': f"{loss:.4f}"})
 
-        model.eval()
-        accuracy, f1_score = model.check_accuracy(test_dataloader)
-        print(f"len(train_dataloader) - {len(train_dataloader)}")
-        avg_loss = running_loss / len(train_dataloader)
-        print(f"\nEpoch: {epoch + 1} | Loss: {avg_loss} | Accuracy: {accuracy} | F1-score: {f1_score}")
-        writer.add_scalar("Loss/train", avg_loss, epoch)
-        writer.add_scalar("accuracy/train", accuracy, epoch)
-        writer.add_scalar("F1-score/train", f1_score, epoch)
-        log_confusion_matrix(writer, model.all_labels, model.all_predictions, class_names, epoch)
+            self.eval()
+            accuracy, f1_score = self.check_accuracy(test_dataloader)
+            print(f"len(train_dataloader) - {len(train_dataloader)}")
+            avg_loss = running_loss / len(train_dataloader)
+            print(f"\nEpoch: {epoch + 1} | Loss: {avg_loss} | Accuracy: {accuracy} | F1-score: {f1_score}")
+            writer.add_scalar("Loss/train", avg_loss, epoch)
+            writer.add_scalar("accuracy/train", accuracy, epoch)
+            writer.add_scalar("F1-score/train", f1_score, epoch)
+            log_confusion_matrix(writer, self.all_labels, self.all_predictions, class_names, epoch)
 
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'best_accuracy': accuracy,
-        }
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': self.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_accuracy': accuracy,
+            }
 
-        # timestamp = time.time()
-        file_name = f"{model.model_name}_{epoch}.pth"
-        file_path = CHECKPOINT_DIR + file_name
-        torch.save(checkpoint, file_path)
-    
-    save_model(model)
+            # timestamp = time.time()
+            file_name = f"{self.model_name}_{epoch}.pth"
+            file_path = CHECKPOINT_DIR + file_name
+            torch.save(checkpoint, file_path)
 
-def save_model(model):
-    torch.save(model.state_dict(), f"{MODEL_SAVE_DIR}{model.model_name}.pth")
+        self.save_model()
 
-def load_model(model, file_name):
-    save = torch.load(MODEL_SAVE_DIR + file_name, map_location=torch.device('cpu'))
-    model.load_state_dict(save)
+    def save_model(self):
+        torch.save(self.state_dict(), f"{MODEL_SAVE_DIR}{self.model_name}.pth")
 
-def load_checkpoint(model, file_name):
-    optimizer = torch.optim.Adam(model.parameters())
+    def load_model(self, file_name):
+        save = torch.load(MODEL_SAVE_DIR + file_name, map_location=torch.device('cpu'))
+        self.load_state_dict(save)
 
-    checkpoint = torch.load(CHECKPOINT_DIR + file_name)
+    def load_checkpoint(self, file_name):
+        optimizer = torch.optim.Adam(self.parameters())
 
-    # Restore states
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
+        checkpoint = torch.load(CHECKPOINT_DIR + file_name)
 
-    return optimizer, epoch
+        # Restore states
+        self.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch = checkpoint['epoch']
+
+        return optimizer, epoch
 
 
 if __name__ == '__main__':
@@ -300,8 +300,8 @@ if __name__ == '__main__':
 
     """Model preparetion"""
     model = Net(MODEL_NAME).cuda()
-    load_model(model, "test_v2.pth")
-    # optimizer, epoch = load_checkpoint(model, 'checkpoint_epoch_2.pth')
+    model.load_model("test_v2.pth")
+    # optimizer, epoch = model.load_checkpoint('checkpoint_epoch_2.pth')
 
 
     # test_item = next(iter(train_dataloader))[0].cuda()
