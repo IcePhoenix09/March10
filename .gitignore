@@ -5,3 +5,5 @@
 *.pth
 \data
 *\runs
+__pycache__/
+static/

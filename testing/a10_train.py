@@ -1,3 +1,4 @@
+import os
 import kagglehub
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -13,13 +14,8 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import f1_score, confusion_matrix
 import seaborn as sns
 
+from PIL import Image
 
-# test_loader = iter(dataloader)
-# images, labels = next(test_loader)
-
-# plt.imshow(images[0].permute(1, 2, 0)) 
-# plt.title(f"Label: {labels[0]}")
-# plt.show()
 
 CHECKPOINT_DIR = "../model_save/checkpoints/"
 MODEL_SAVE_DIR = "../model_save/save_files/"
@@ -58,7 +54,6 @@ def show_sample_images(images, true_labels, predicted, num_images, class_names):
         ax = fig.add_subplot(1, num_images, i + 1, xticks=[], yticks=[])
 
         img = images[i]
-
         img = np.transpose(img, (1, 2, 0))
         img = np.clip(img, 0, 1)
 
@@ -71,51 +66,83 @@ def show_sample_images(images, true_labels, predicted, num_images, class_names):
     plt.show()
     plt.close(fig)
 
+
 class Net(nn.Module):
     def __init__(self, model_name):
         super().__init__()
-
-        self.backbone = nn.Sequential(
-            nn.Conv2d(3, 4, (5, 5), padding=0),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-
-            nn.Conv2d(4, 4, (5, 5), padding=0),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-
-            nn.Conv2d(4, 8, (5, 5), padding=0),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-
-            nn.Conv2d(8, 16, (5, 5), padding=0),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2)
-        )
-
-        self.fc = nn.Linear(1600, 10)
-
+        
+        # Standard variables from your original code
         self.model_name = model_name
-
         self.all_predictions = []
         self.all_labels = []
+        self.optimizer = None
+        self.criterion = None
 
+        # 1. AlexNet Backbone (Feature Extractor)
+        self.backbone = nn.Sequential(
+            # Block 1: 11x11 kernel with stride 4 to rapidly downsample the 227x227 image
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            
+            # Block 2: 5x5 kernel
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            
+            # Block 3: Three consecutive 3x3 convolutions with NO pooling in between
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+
+        # Standard practice: forces the output to be exactly 6x6 just in case input size varies
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+
+        # 2. AlexNet Classifier (Fully Connected Layers)
+        self.fc = nn.Sequential(
+            nn.Dropout(p=0.5), # Dropout added to prevent overfitting in these massive layers
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            
+            nn.Dropout(p=0.5),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            
+            nn.Linear(4096, 10), # 10 output classes for your animal dataset
+        )
 
     def forward(self, x):
-        # net = x[:, None].type(torch.float32)
-        net = self.backbone(x)
-        net = net.view(-1, 16 * 10 * 10)
-        net = self.fc(net)
-        # net = nn.functional.relu(net)
-        return net
+        x = self.backbone(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1) # Flatten all dimensions except the batch dimension
+        x = self.fc(x)
+        return x
+    
+    def create_new(self):
+        """Create criterion and optimizer for the model"""
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        self.criterion = nn.CrossEntropyLoss()
+    
+    def load_model_for_inference(self, file_name):
+        save = torch.load(MODEL_SAVE_DIR + file_name, map_location=torch.device('cpu'))
+        self.load_state_dict(save)
 
+    def load_checkpoint(self, file_name):
+        save = torch.load(CHECKPOINT_DIR + file_name, map_location=torch.device('cpu'))
+        self.load_state_dict(save)
 
     def predict(self, images):
         """ 
         images should be a tensor of shape (N, C, H, W)
         and it should be on gpu
         """
-
         self.eval()
         with torch.no_grad():
             y_pred = self(images)
@@ -124,7 +151,6 @@ class Net(nn.Module):
         return predicted_class
 
     def check_accuracy(self, test_dataloader):
-
         self.all_predictions = []
         self.all_labels = []
 
@@ -180,7 +206,6 @@ class Net(nn.Module):
         plt.xlabel('Predicted Label', fontsize=12)
         plt.show()
 
-
     def train_step(self, x, y, optimizer, criterion):
         optimizer.zero_grad()
         y_pred = self(x)
@@ -190,8 +215,7 @@ class Net(nn.Module):
         return loss.item()
 
     def train_loop(self, train_dataloader, test_dataloader, optimizer, criterion, all_epochs=3, starting_epoch=0):
-
-        EPOCHS =  all_epochs - starting_epoch
+        EPOCHS = all_epochs - starting_epoch
         if EPOCHS <= 0:
             print("[Error] Training is already finished")
             return
@@ -230,7 +254,6 @@ class Net(nn.Module):
                 'best_accuracy': accuracy,
             }
 
-            # timestamp = time.time()
             file_name = f"{self.model_name}_{epoch}.pth"
             file_path = CHECKPOINT_DIR + file_name
             torch.save(checkpoint, file_path)
@@ -240,38 +263,52 @@ class Net(nn.Module):
     def save_model(self):
         torch.save(self.state_dict(), f"{MODEL_SAVE_DIR}{self.model_name}.pth")
 
-    def load_model(self, file_name):
-        save = torch.load(MODEL_SAVE_DIR + file_name, map_location=torch.device('cpu'))
-        self.load_state_dict(save)
+    def predict_custom_image(self, image_path, transform, class_names):
+            """
+            Завантажує власне зображення, обробляє його, повертає та робить передбачення.
+            """
+            img = Image.open(image_path).convert('RGB')
+            
 
-    def load_checkpoint(self, file_name):
-        optimizer = torch.optim.Adam(self.parameters())
+            img = img.rotate(-90, expand=True)
+            
 
-        checkpoint = torch.load(CHECKPOINT_DIR + file_name)
 
-        # Restore states
-        self.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        epoch = checkpoint['epoch']
-
-        return optimizer, epoch
+            img_tensor = transform(img)
+            
+            img_tensor = img_tensor.unsqueeze(0).cuda()
+            
+            self.eval()
+            with torch.no_grad():
+                output = self(img_tensor)
+                predicted_idx = output.argmax(dim=1).item()
+                
+            predicted_class = class_names[predicted_idx]
+            
+            plt.figure(figsize=(6, 6))
+            plt.imshow(img)
+            plt.title(f"Прогноз моделі: {predicted_class}", fontsize=14, color='blue')
+            plt.axis('off')
+            plt.show()
+            
+            print(f"Прогноз моделі: {predicted_class}")
+            return predicted_class
 
 
 if __name__ == '__main__':
     BATCH_SIZE = 32
-    MODEL_NAME = "test_v2"
+    MODEL_NAME = "release_v2"
 
-    # writer = SummaryWriter(log_dir=LOG_DIR)
-    writer = SummaryWriter()
+    writer = SummaryWriter(log_dir=LOG_DIR)
 
-    """Data preparetion"""
+    """Data preparation"""
     path = kagglehub.dataset_download("alessiocorrado99/animals10")
     path = path + "/raw-img"
 
     data_transforms = transforms.Compose([
         transforms.Resize((227, 227)),
-        transforms.ToTensor(), # it converte it to [0, 1] range
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # This numbers calculated on ImageNet
+        transforms.ToTensor(), # it converts it to [0, 1] range
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # These numbers calculated on ImageNet
         ])
 
     dataset = datasets.ImageFolder(root=path, transform=data_transforms)
@@ -288,7 +325,6 @@ if __name__ == '__main__':
         num_workers=4, 
         pin_memory=True
         )
-    # train_loader = iter(dataloader)
 
     test_dataloader = DataLoader(
         test_data, 
@@ -298,32 +334,29 @@ if __name__ == '__main__':
         )
     print(f"Size of image tensor: {train_dataloader.dataset[0][0].size()}")
 
-    """Model preparetion"""
+    """Model preparation"""
     model = Net(MODEL_NAME).cuda()
-    model.load_model("test_v2.pth")
-    # optimizer, epoch = model.load_checkpoint('checkpoint_epoch_2.pth')
+    
+    # Commented out to prevent a crash if the file doesn't exist yet
+    model.load_model_for_inference("release_v2.pth")
 
+    # Loop through images in ../img and predict their classes
+    for img_file in os.listdir("../img"):
+        img_path = os.path.join("../img", img_file)
+        model.predict_custom_image(img_path, data_transforms, class_names)
 
-    # test_item = next(iter(train_dataloader))[0].cuda()
-    # print(model.forward(test_item).size())
-
-    # test_item = next(iter(train_dataloader))[0].cuda()
-    # print(model.forward(test_item).size())
-    # print(model)
-
+    """Training execution (Uncomment to train)"""
     # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     # criterion = nn.CrossEntropyLoss()
+    # model.train_loop(train_dataloader, test_dataloader, optimizer, criterion, all_epochs=10, starting_epoch=0)
 
-    # train_loop(model, train_dataloader, test_dataloader, optimizer, criterion, all_epochs=1, starting_epoch=0)
-
-    model.check_accuracy(test_dataloader)
-
-    model.plot_confusion_matrix(class_names)
-    log_confusion_matrix(writer, model.all_labels, model.all_predictions, class_names, epoch=0)
-    show_sample_images(model.all_predictions, 6, class_names)
-    # log_sample_images(model, test_dataloader, 6, writer)
+    # model.check_accuracy(test_dataloader)
+    # model.plot_confusion_matrix(class_names)
+    
+    # Grab a batch to properly supply data to the visualizer
+    test_images, test_labels = next(iter(test_dataloader))
+    test_preds = model.predict(test_images.cuda()).cpu().numpy()
+    show_sample_images(test_images.numpy(), test_labels.numpy(), test_preds, 10, class_names)
 
     writer.flush()
     writer.close()
-
-    # print(test_data.dataset.tensors[0][test_data.indices].size())

@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import onnxruntime as ort
+import base64
+import uuid
 from flask import Flask, request, render_template, redirect, url_for, session
 from PIL import Image
 import io
@@ -23,7 +25,7 @@ CIFAR100_CLASSES = [
 ]
 
 # Load the ONNX model
-MODEL_PATH = "model.onnx"
+MODEL_PATH = "model_v1/model.onnx"
 ort_session = None
 if os.path.exists(MODEL_PATH):
     ort_session = ort.InferenceSession(MODEL_PATH)
@@ -57,6 +59,16 @@ def home():
 
         try:
             img_bytes = file.read()
+            
+            # Save the image to the static folder to avoid 4KB session cookie limit
+            os.makedirs(os.path.join('static', 'uploads'), exist_ok=True)
+            filename = f"{uuid.uuid4().hex}.png"
+            filepath = os.path.join('static', 'uploads', filename)
+            with open(filepath, 'wb') as f:
+                f.write(img_bytes)
+                
+            session['image_filename'] = filename
+            
             input_data = preprocess_image(img_bytes)
             inputs = {ort_session.get_inputs()[0].name: input_data}
             outputs = ort_session.run(None, inputs)
@@ -73,15 +85,46 @@ def home():
             return redirect(url_for('home'))
 
     # GET Request Logic
-    # Pull data from session and then clear it
     prediction = session.pop('prediction', None)
     confidence = session.pop('confidence', None)
     error = session.pop('error', None)
+    image_filename = session.pop('image_filename', None)
+    
+    image_url = url_for('static', filename=f"uploads/{image_filename}") if image_filename else None
 
     return render_template('index.html', 
                            prediction=prediction, 
                            confidence=confidence, 
-                           error=error)
+                           error=error,
+                           image_url=image_url)
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    if ort_session is None:
+        return {"error": "Model not found."}, 500
+
+    if 'file' not in request.files:
+        return {"error": "No file uploaded."}, 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return {"error": "No file selected."}, 400
+
+    try:
+        img_bytes = file.read()
+        input_data = preprocess_image(img_bytes)
+        inputs = {ort_session.get_inputs()[0].name: input_data}
+        outputs = ort_session.run(None, inputs)
+        prediction_idx = int(np.argmax(outputs[0]))
+        confidence = float(np.max(outputs[0]))
+        
+        return {
+            "class_id": prediction_idx,
+            "class_name": CIFAR100_CLASSES[prediction_idx],
+            "confidence": confidence
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
